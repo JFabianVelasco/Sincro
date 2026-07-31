@@ -1,51 +1,44 @@
 // =========================================================
 // SINCRO — state.js
-// Estado en memoria de la aplicación + persistencia de la
-// sesión local (localStorage). Nada de datos de pareja se
-// guarda aquí de forma duradera: eso vive en Firestore.
+// Estado en memoria de la aplicación + caché local ligera de
+// la sesión. La identidad real vive en Firebase Authentication:
+// deviceId ahora ES el uid de la persona autenticada.
 // =========================================================
 
-import { generateId } from './utils.js';
+import { getCountryTz, getCountryLabel, countryFlagEmoji } from './countries.js';
 
 const LS_KEYS = {
-  deviceId: 'sincro.deviceId',
   coupleId: 'sincro.coupleId',
-  coupleSecret: 'sincro.coupleSecret',
   displayName: 'sincro.displayName',
+  gender: 'sincro.gender',
   country: 'sincro.country',
   timezone: 'sincro.timezone',
   theme: 'sincro.theme',
   notifsEnabled: 'sincro.notifsEnabled',
 };
 
-export const COUNTRY_TZ = {
-  CO: 'America/Bogota',
-  ES: 'Europe/Madrid',
-};
+export { getCountryTz, getCountryLabel, countryFlagEmoji };
 
-export const COUNTRY_FLAG = {
-  CO: '🇨🇴',
-  ES: '🇪🇸',
-};
-
-export const COUNTRY_LABEL = {
-  CO: 'Colombia',
-  ES: 'España',
+export const GENDER_LABEL = {
+  male: 'Hombre',
+  female: 'Mujer',
+  unspecified: 'Prefiero no decirlo',
 };
 
 /** Estado global compartido en memoria durante la sesión de la pestaña. */
 export const state = {
-  deviceId: null,
+  uid: null,             // uid de Firebase Authentication = identificador de la persona
+  deviceId: null,         // alias de uid, se mantiene por compatibilidad con el resto de módulos
+  authEmail: null,
   coupleId: null,
-  coupleSecret: null,
   displayName: null,
+  gender: null,
   country: null,
   timezone: null,
   theme: 'system',
 
-  partnerDeviceId: null, // se detecta al observar members/
-  members: {},           // deviceId -> {displayName, country, timezone}
-  presence: {},           // deviceId -> presence doc
+  members: {},           // uid -> {displayName, gender, country, timezone}
+  presence: {},           // uid -> presence doc
   notes: [],
   plans: [],
   lists: [],
@@ -61,7 +54,6 @@ export const state = {
 
 const listeners = new Set();
 
-/** Suscribirse a cualquier cambio de estado relevante para re-renderizar. */
 export function onStateChange(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
@@ -72,47 +64,47 @@ export function notifyStateChange(reason) {
 }
 
 // ---------------------------------------------------------
-// Sesión local
+// Identidad (Firebase Auth)
 // ---------------------------------------------------------
-export function loadLocalSession() {
-  state.deviceId = localStorage.getItem(LS_KEYS.deviceId);
+export function setAuthIdentity(user) {
+  state.uid = user.uid;
+  state.deviceId = user.uid;
+  state.authEmail = user.email || null;
+}
+
+export function clearAuthIdentity() {
+  state.uid = null;
+  state.deviceId = null;
+  state.authEmail = null;
+}
+
+// ---------------------------------------------------------
+// Caché local (solo para acelerar el primer render; la fuente
+// de verdad del perfil vive en Firestore, en users/{uid}).
+// ---------------------------------------------------------
+export function loadLocalCache() {
   state.coupleId = localStorage.getItem(LS_KEYS.coupleId);
-  state.coupleSecret = localStorage.getItem(LS_KEYS.coupleSecret);
   state.displayName = localStorage.getItem(LS_KEYS.displayName);
+  state.gender = localStorage.getItem(LS_KEYS.gender);
   state.country = localStorage.getItem(LS_KEYS.country);
   state.timezone = localStorage.getItem(LS_KEYS.timezone);
   state.theme = localStorage.getItem(LS_KEYS.theme) || 'system';
-  return hasCompleteSession();
 }
 
-export function hasCompleteSession() {
-  return !!(state.deviceId && state.coupleId && state.displayName && state.country);
-}
-
-export function ensureDeviceId() {
-  let id = localStorage.getItem(LS_KEYS.deviceId);
-  if (!id) {
-    id = generateId();
-    localStorage.setItem(LS_KEYS.deviceId, id);
-  }
-  state.deviceId = id;
-  return id;
-}
-
-export function saveProfileLocal({ displayName, country }) {
+export function saveProfileLocal({ displayName, gender, country }) {
   state.displayName = displayName;
+  state.gender = gender;
   state.country = country;
-  state.timezone = COUNTRY_TZ[country];
+  state.timezone = getCountryTz(country);
   localStorage.setItem(LS_KEYS.displayName, displayName);
+  localStorage.setItem(LS_KEYS.gender, gender || '');
   localStorage.setItem(LS_KEYS.country, country);
   localStorage.setItem(LS_KEYS.timezone, state.timezone);
 }
 
-export function saveSpaceLocal({ coupleId, coupleSecret }) {
+export function saveSpaceLocal({ coupleId }) {
   state.coupleId = coupleId;
-  state.coupleSecret = coupleSecret || '';
   localStorage.setItem(LS_KEYS.coupleId, coupleId);
-  if (coupleSecret) localStorage.setItem(LS_KEYS.coupleSecret, coupleSecret);
 }
 
 export function saveTheme(theme) {
@@ -127,29 +119,33 @@ export function setNotifsPref(val) {
   localStorage.setItem(LS_KEYS.notifsEnabled, val ? 'true' : 'false');
 }
 
-/** Cierra sesión local: borra todo lo guardado en este dispositivo. */
+export function hasCompleteProfile() {
+  return !!(state.displayName && state.country);
+}
+
+/** Cierra sesión local: borra la caché guardada en este dispositivo (la cuenta sigue existiendo). */
 export function clearLocalSession() {
   Object.values(LS_KEYS).forEach((k) => {
     if (k === LS_KEYS.theme) return; // conservar preferencia de tema
     localStorage.removeItem(k);
   });
+  clearAuthIdentity();
   Object.assign(state, {
-    deviceId: null, coupleId: null, coupleSecret: null,
-    displayName: null, country: null, timezone: null,
-    partnerDeviceId: null, members: {}, presence: {},
+    coupleId: null, displayName: null, gender: null, country: null, timezone: null,
+    members: {}, presence: {},
     notes: [], plans: [], lists: [], listItemsByList: {},
     checkins: [], activity: [], meeting: null, meetingTodos: [],
   });
 }
 
-/** Devuelve el deviceId de la otra persona, si ya se conoce. */
+/** Devuelve el uid de la otra persona, si ya se conoce. */
 export function getPartnerDeviceId() {
   if (!state.deviceId) return null;
   const ids = Object.keys(state.members);
   return ids.find((id) => id !== state.deviceId) || null;
 }
 
-export function getMemberName(deviceId) {
-  if (deviceId === state.deviceId) return state.displayName;
-  return state.members[deviceId]?.displayName || 'Tu pareja';
+export function getMemberName(uid) {
+  if (uid === state.deviceId) return state.displayName;
+  return state.members[uid]?.displayName || 'Tu pareja';
 }

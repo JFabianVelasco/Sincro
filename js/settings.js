@@ -6,13 +6,14 @@
 // =========================================================
 
 import {
-  db, paths, doc, setDoc, updateDoc, deleteDoc, addDoc, getDoc, onSnapshot,
+  paths, setDoc, updateDoc, deleteDoc, addDoc, getDoc, onSnapshot,
   serverTimestamp,
 } from './firebase.js';
 import {
-  state, notifyStateChange, COUNTRY_TZ, saveProfileLocal, saveSpaceLocal, saveTheme,
+  state, notifyStateChange, getCountryTz, saveProfileLocal, saveSpaceLocal, saveTheme,
 } from './state.js';
-import { generateSpaceCode, generateSpaceSecret, normalizeCode, cleanInput } from './utils.js';
+import { saveUserProfile } from './auth.js';
+import { generateSpaceCode, normalizeCode, cleanInput } from './utils.js';
 import { logActivity } from './activity.js';
 
 // ---------------------------------------------------------
@@ -42,24 +43,27 @@ export function setTheme(theme) {
 
 // ---------------------------------------------------------
 // Creación / unión al espacio
+// El uid de Firebase Authentication identifica a cada miembro,
+// así que cualquier dispositivo donde la persona inicie sesión
+// entra directamente a su espacio sin volver a pedir el código.
 // ---------------------------------------------------------
 export async function createCoupleSpace() {
   const code = generateSpaceCode();
   const coupleId = normalizeCode(code);
-  const secret = generateSpaceSecret();
 
   await setDoc(paths.couple(coupleId), {
     createdAt: serverTimestamp(),
-    secretHint: secret.slice(0, 6), // no es un secreto de acceso real, solo referencia
   });
   await setDoc(paths.member(coupleId, state.deviceId), {
     displayName: state.displayName,
+    gender: state.gender || 'unspecified',
     country: state.country,
     timezone: state.timezone,
     joinedAt: serverTimestamp(),
   });
 
-  saveSpaceLocal({ coupleId, coupleSecret: secret });
+  saveSpaceLocal({ coupleId });
+  await saveUserProfile(state.uid, { coupleId });
   return code;
 }
 
@@ -71,13 +75,23 @@ export async function joinCoupleSpace(rawCode) {
 
   await setDoc(paths.member(coupleId, state.deviceId), {
     displayName: state.displayName,
+    gender: state.gender || 'unspecified',
     country: state.country,
     timezone: state.timezone,
     joinedAt: serverTimestamp(),
   });
 
-  saveSpaceLocal({ coupleId, coupleSecret: '' });
+  saveSpaceLocal({ coupleId });
+  await saveUserProfile(state.uid, { coupleId });
   return coupleId;
+}
+
+export function buildInviteLink(code) {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('join', normalizeCode(code));
+  return url.toString();
 }
 
 // ---------------------------------------------------------
@@ -100,16 +114,24 @@ export function unsubscribeMembers() {
   if (unsubMembers) { unsubMembers(); unsubMembers = null; }
 }
 
-export async function updateProfile(coupleId, { displayName, country }) {
+export async function updateProfile(coupleId, { displayName, gender, country }) {
   const cleanName = cleanInput(displayName, 24);
   if (!cleanName) throw new Error('El nombre no puede estar vacío.');
-  const timezone = COUNTRY_TZ[country];
-  saveProfileLocal({ displayName: cleanName, country });
+  const timezone = getCountryTz(country);
+
+  // Actualiza primero el estado local y avisa a la UI de inmediato:
+  // así "Guardar" refresca el saludo, la presencia, etc. sin esperar
+  // al round-trip de Firestore.
+  saveProfileLocal({ displayName: cleanName, gender, country });
+  notifyStateChange('profile-local');
+
   await setDoc(paths.member(coupleId, state.deviceId), {
     displayName: cleanName,
+    gender: gender || 'unspecified',
     country,
     timezone,
   }, { merge: true });
+  await saveUserProfile(state.uid, { displayName: cleanName, gender, country });
 }
 
 // ---------------------------------------------------------

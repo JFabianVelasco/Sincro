@@ -25,6 +25,19 @@ import {
   Timestamp,
   enableIndexedDbPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile as updateAuthProfile,
+  onAuthStateChanged,
+  signOut,
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyC4PYwAIHda3PpHk8P2L8dg5VzIha6LKFg',
@@ -37,6 +50,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const auth = getAuth(app);
 
 // La persistencia offline es opcional y no debe romper la app si falla
 // (por ejemplo, en pestañas múltiples o navegadores sin soporte).
@@ -48,6 +62,9 @@ export {
   collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
   getDoc, getDocs, onSnapshot, query, where, orderBy, limit,
   serverTimestamp, Timestamp,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail,
+  updateAuthProfile, onAuthStateChanged, signOut,
 };
 
 // ---------------------------------------------------------
@@ -56,6 +73,7 @@ export {
 // repartidas por el resto del código.
 // ---------------------------------------------------------
 export const paths = {
+  user: (uid) => doc(db, 'users', uid),
   couple: (coupleId) => doc(db, 'couples', coupleId),
   members: (coupleId) => collection(db, 'couples', coupleId, 'members'),
   member: (coupleId, deviceId) => doc(db, 'couples', coupleId, 'members', deviceId),

@@ -1,21 +1,26 @@
 // =========================================================
 // SINCRO — app.js
-// Punto de entrada: onboarding, enrutado, renderizado de
-// pantallas y conexión de todos los módulos entre sí.
+// Punto de entrada: autenticación, perfil, enrutado,
+// renderizado de pantallas y conexión de todos los módulos.
 // =========================================================
 
 import { qs, qsa, escapeHtml, relativeTime, toDateSafe, copyToClipboard, formatCodeForDisplay } from './utils.js';
 import {
-  state, onStateChange, notifyStateChange, loadLocalSession, ensureDeviceId,
-  saveProfileLocal, clearLocalSession, COUNTRY_TZ, COUNTRY_FLAG, COUNTRY_LABEL,
-  getPartnerDeviceId, getMemberName,
+  state, onStateChange, notifyStateChange, loadLocalCache, saveProfileLocal,
+  saveSpaceLocal, clearLocalSession, hasCompleteProfile, setAuthIdentity,
+  getPartnerDeviceId, GENDER_LABEL, countryFlagEmoji, getCountryTz, getCountryLabel,
 } from './state.js';
+import { COUNTRIES } from './countries.js';
 import {
   getGreeting, formatClock, formatHourDiff, talkWindowMessage, guessActivityLabel,
   formatInstantForZone, daysUntil,
 } from './time.js';
 import {
-  applyTheme, initThemeWatcher, setTheme, createCoupleSpace, joinCoupleSpace,
+  watchAuthState, signInWithGoogle, signUpWithEmail, signInWithEmail,
+  resetPassword, signOutUser, fetchUserProfile, saveUserProfile, friendlyAuthError,
+} from './auth.js';
+import {
+  applyTheme, initThemeWatcher, setTheme, createCoupleSpace, joinCoupleSpace, buildInviteLink,
   subscribeMembers, unsubscribeMembers, updateProfile,
   subscribeMeeting, unsubscribeMeeting, saveMeeting, addMeetingTodo, toggleMeetingTodo, deleteMeetingTodo,
 } from './settings.js';
@@ -23,76 +28,180 @@ import {
   subscribePresence, unsubscribePresence, setStatus, markHere,
   isHereActive, bothHere, statusMeta, STATUS_OPTIONS,
 } from './presence.js';
-import { subscribeNotes, unsubscribeNotes, createNote, markNoteRead, deleteNote, unreadCountForMe, NOTE_TYPES } from './notes.js';
+import { subscribeNotes, unsubscribeNotes, createNote, markNoteRead, unreadCountForMe, NOTE_TYPES } from './notes.js';
 import { subscribePlans, unsubscribePlans, createPlan, togglePlanCompleted, deletePlan, getNextPlan, PLAN_TYPES } from './plans.js';
 import {
-  subscribeLists, unsubscribeLists, subscribeListItems, unsubscribeListItems,
-  createList, addListItem, toggleListItem, deleteListItem, deleteList,
+  subscribeLists, unsubscribeLists, subscribeListItems,
+  createList, addListItem, toggleListItem, deleteListItem,
   isItemDoneByBoth, isItemDoneByMe, LIST_CATEGORIES,
 } from './lists.js';
-import { subscribeCheckins, unsubscribeCheckins, createCheckin, getLastCheckinFor, moodMeta, MOOD_OPTIONS } from './checkins.js';
+import { subscribeCheckins, unsubscribeCheckins, createCheckin, moodMeta, MOOD_OPTIONS } from './checkins.js';
 import { subscribeActivity, unsubscribeActivity } from './activity.js';
-import {
-  showToast, notifSupported, notifPermission, requestNotifPermission, notifStatusText, notifyBrowser,
-} from './notifications.js';
-import { db, paths, onSnapshot } from './firebase.js';
+import { showToast, notifPermission, requestNotifPermission, notifStatusText } from './notifications.js';
+import { paths, onSnapshot } from './firebase.js';
 
 // ---------------------------------------------------------
 // Arranque
 // ---------------------------------------------------------
-ensureDeviceId();
-const hasSession = loadLocalSession();
+loadLocalCache();
 applyTheme(state.theme);
 initThemeWatcher();
+populateCountrySelects();
 
-if (hasSession) {
-  showApp();
-} else {
-  showOnboarding();
+const pendingJoinCode = new URLSearchParams(window.location.search).get('join');
+
+qs('#view-onboarding').hidden = false;
+qs('#view-app').hidden = true;
+showOnboardingStep('auth');
+wireOnboarding();
+
+watchAuthState(async (user) => {
+  if (!user) {
+    qs('#view-onboarding').hidden = false;
+    qs('#view-app').hidden = true;
+    showOnboardingStep('auth');
+    return;
+  }
+
+  setAuthIdentity(user);
+
+  let profile = null;
+  try { profile = await fetchUserProfile(user.uid); } catch (_) { /* seguimos con la caché local */ }
+
+  if (profile) {
+    if (profile.displayName) {
+      saveProfileLocal({
+        displayName: profile.displayName,
+        gender: profile.gender || 'unspecified',
+        country: profile.country || state.country,
+      });
+    }
+    if (profile.coupleId) saveSpaceLocal({ coupleId: profile.coupleId });
+  }
+
+  if (state.coupleId) {
+    showApp();
+  } else if (hasCompleteProfile()) {
+    showOnboardingStep('space');
+  } else {
+    if (user.displayName && !state.displayName) qs('#input-name').value = user.displayName;
+    showOnboardingStep('profile');
+  }
+});
+
+// ---------------------------------------------------------
+// Países (onboarding + ajustes)
+// ---------------------------------------------------------
+function populateCountrySelects() {
+  const optionsHtml = '<option value="" disabled selected>Selecciona tu país</option>' +
+    COUNTRIES.map((c) => `<option value="${c.code}">${countryFlagEmoji(c.code)} ${escapeHtml(c.name)}</option>`).join('');
+  const optionsHtmlSettings = COUNTRIES.map((c) => `<option value="${c.code}">${countryFlagEmoji(c.code)} ${escapeHtml(c.name)}</option>`).join('');
+  qs('#input-country').innerHTML = optionsHtml;
+  qs('#settings-country').innerHTML = optionsHtmlSettings;
 }
 
 // ---------------------------------------------------------
 // ONBOARDING
 // ---------------------------------------------------------
-let onboardingCountry = null;
+let onboardingGender = 'unspecified';
+let authMode = 'signin';
 
-function showOnboarding() {
-  qs('#view-onboarding').hidden = false;
-  qs('#view-app').hidden = true;
-  wireOnboarding();
+function showOnboardingStep(step) {
+  qs('#onboarding-step-auth').hidden = step !== 'auth';
+  qs('#onboarding-step-profile').hidden = step !== 'profile';
+  qs('#onboarding-step-space').hidden = step !== 'space';
+  if (step === 'space' && pendingJoinCode) {
+    qsa('.tab-switch__opt[data-mode]').forEach((b) => {
+      b.classList.toggle('is-active', b.dataset.mode === 'join');
+      b.setAttribute('aria-selected', String(b.dataset.mode === 'join'));
+    });
+    qs('#mode-create').hidden = true;
+    qs('#mode-join').hidden = false;
+    qs('#input-code').value = pendingJoinCode;
+  }
 }
 
 function wireOnboarding() {
-  const nameInput = qs('#input-name');
-  const continueBtn = qs('#btn-continue-name');
+  // --- Paso 1: autenticación ---
+  qs('#btn-google').addEventListener('click', async () => {
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      showAuthError(friendlyAuthError(err));
+    }
+  });
 
-  const validate = () => {
-    continueBtn.disabled = !(nameInput.value.trim().length >= 1 && onboardingCountry);
-  };
-
-  qsa('.country-option').forEach((btn) => {
+  qsa('.tab-switch__opt[data-auth-mode]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      onboardingCountry = btn.dataset.country;
-      qsa('.country-option').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
-      validate();
+      authMode = btn.dataset.authMode;
+      qsa('.tab-switch__opt[data-auth-mode]').forEach((b) => {
+        b.classList.toggle('is-active', b === btn);
+        b.setAttribute('aria-selected', String(b === btn));
+      });
+      qs('#btn-email-auth').textContent = authMode === 'signup' ? 'Crear cuenta' : 'Iniciar sesión';
     });
   });
-  nameInput.addEventListener('input', validate);
 
-  continueBtn.addEventListener('click', () => {
-    saveProfileLocal({ displayName: nameInput.value.trim(), country: onboardingCountry });
-    qs('#onboarding-step-name').hidden = true;
-    qs('#onboarding-step-space').hidden = false;
+  qs('#btn-email-auth').addEventListener('click', async () => {
+    const email = qs('#input-email').value.trim();
+    const password = qs('#input-password').value;
+    if (!email || !password) { showAuthError('Escribe tu correo y contraseña.'); return; }
+    const btn = qs('#btn-email-auth');
+    btn.disabled = true;
+    hideAuthError();
+    try {
+      if (authMode === 'signup') await signUpWithEmail(email, password);
+      else await signInWithEmail(email, password);
+    } catch (err) {
+      showAuthError(friendlyAuthError(err));
+    } finally {
+      btn.disabled = false;
+    }
   });
 
-  qs('#btn-back-name').addEventListener('click', () => {
-    qs('#onboarding-step-space').hidden = true;
-    qs('#onboarding-step-name').hidden = false;
+  qs('#btn-forgot-password').addEventListener('click', async () => {
+    const email = qs('#input-email').value.trim();
+    if (!email) { showAuthError('Escribe tu correo primero para enviarte el enlace.'); return; }
+    try {
+      await resetPassword(email);
+      showToast('✓ Te enviamos un correo para restablecer tu contraseña');
+    } catch (err) {
+      showAuthError(friendlyAuthError(err));
+    }
   });
 
-  qsa('.tab-switch__opt').forEach((btn) => {
+  // --- Paso 2: perfil ---
+  const nameInput = qs('#input-name');
+  const countrySelect = qs('#input-country');
+  const continueBtn = qs('#btn-continue-profile');
+
+  const validateProfile = () => {
+    continueBtn.disabled = !(nameInput.value.trim().length >= 1 && countrySelect.value);
+  };
+
+  qsa('#gender-pick .country-option').forEach((btn) => {
     btn.addEventListener('click', () => {
-      qsa('.tab-switch__opt').forEach((b) => {
+      onboardingGender = btn.dataset.gender;
+      qsa('#gender-pick .country-option').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
+    });
+  });
+  nameInput.addEventListener('input', validateProfile);
+  countrySelect.addEventListener('change', validateProfile);
+
+  continueBtn.addEventListener('click', async () => {
+    const displayName = nameInput.value.trim();
+    const country = countrySelect.value;
+    saveProfileLocal({ displayName, gender: onboardingGender, country });
+    try { await saveUserProfile(state.uid, { displayName, gender: onboardingGender, country }); } catch (_) { /* seguimos igualmente */ }
+    showOnboardingStep('space');
+  });
+
+  qs('#btn-back-profile').addEventListener('click', () => showOnboardingStep('profile'));
+
+  // --- Paso 3: espacio ---
+  qsa('.tab-switch__opt[data-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      qsa('.tab-switch__opt[data-mode]').forEach((b) => {
         b.classList.toggle('is-active', b === btn);
         b.setAttribute('aria-selected', String(b === btn));
       });
@@ -121,9 +230,12 @@ function wireOnboarding() {
     showToast(ok ? '✓ Código copiado' : 'No se pudo copiar', ok ? 'default' : 'error');
   });
 
-  qs('#btn-enter-space').addEventListener('click', () => {
-    showApp();
+  qs('#btn-copy-link').addEventListener('click', async () => {
+    const ok = await copyToClipboard(buildInviteLink(state.coupleId));
+    showToast(ok ? '✓ Enlace de invitación copiado' : 'No se pudo copiar', ok ? 'default' : 'error');
   });
+
+  qs('#btn-enter-space').addEventListener('click', () => showApp());
 
   qs('#btn-join-space').addEventListener('click', async () => {
     const btn = qs('#btn-join-space');
@@ -139,6 +251,15 @@ function wireOnboarding() {
   });
 }
 
+function showAuthError(msg) {
+  const el = qs('#auth-error');
+  el.textContent = msg;
+  el.hidden = false;
+}
+function hideAuthError() {
+  qs('#auth-error').hidden = true;
+}
+
 // ---------------------------------------------------------
 // APP
 // ---------------------------------------------------------
@@ -149,8 +270,11 @@ function showApp() {
 }
 
 let clockInterval = null;
+let appInitialized = false;
 
 function initApp() {
+  if (appInitialized) return;
+  appInitialized = true;
   const coupleId = state.coupleId;
 
   subscribeMembers(coupleId);
@@ -180,13 +304,14 @@ function initApp() {
 
 function renderAll(reason) {
   if (['members', 'presence', 'init'].includes(reason)) renderPresence();
+  if (['members', 'init', 'profile-local'].includes(reason)) renderClocksAndGreeting();
   if (['notes', 'init'].includes(reason)) renderNotesPreview();
   if (['plans', 'init', 'members'].includes(reason)) { renderNextPlan(); if (state.route === 'plans') renderPlansList(); }
   if (['lists', 'init'].includes(reason) && state.route === 'lists') renderListsGrid();
   if (['list-items'].includes(reason) && state.route === 'list-detail') renderListDetailItems();
   if (['activity', 'init'].includes(reason)) renderActivity();
-  if (['meeting', 'meeting-todos', 'init'].includes(reason)) renderMeeting();
-  if (reason === 'members' || reason === 'init') renderMoreProfile();
+  if (['meeting', 'meeting-todos', 'init', 'members'].includes(reason)) renderMeeting();
+  if (['members', 'init', 'profile-local'].includes(reason)) renderMoreProfile();
 }
 
 // ---------------------------------------------------------
@@ -197,7 +322,7 @@ function watchConnection(coupleId) {
   const label = qs('#connection-label');
   let wasOffline = false;
 
-  const setState = (s) => {
+  const setConnState = (s) => {
     state.connection = s;
     badge.dataset.state = s;
     label.textContent = s === 'online' ? 'Conectado' : s === 'offline' ? 'Sin conexión' : 'Conectando…';
@@ -208,14 +333,14 @@ function watchConnection(coupleId) {
     if (s === 'offline') wasOffline = true;
   };
 
-  setState('connecting');
+  setConnState('connecting');
   onSnapshot(paths.couple(coupleId), { includeMetadataChanges: true }, (snap) => {
-    if (!navigator.onLine) { setState('offline'); return; }
-    setState(snap.metadata.fromCache && snap.metadata.hasPendingWrites ? 'connecting' : 'online');
-  }, () => setState('offline'));
+    if (!navigator.onLine) { setConnState('offline'); return; }
+    setConnState(snap.metadata.fromCache && snap.metadata.hasPendingWrites ? 'connecting' : 'online');
+  }, () => setConnState('offline'));
 
-  window.addEventListener('online', () => setState('online'));
-  window.addEventListener('offline', () => setState('offline'));
+  window.addEventListener('online', () => setConnState('online'));
+  window.addEventListener('offline', () => setConnState('offline'));
 }
 
 // ---------------------------------------------------------
@@ -244,18 +369,33 @@ function switchRoute(route) {
 // ---------------------------------------------------------
 function renderClocksAndGreeting() {
   const myTz = state.timezone;
-  const tzCO = COUNTRY_TZ.CO;
-  const tzES = COUNTRY_TZ.ES;
+  const partnerId = getPartnerDeviceId();
+  const partner = partnerId ? state.members[partnerId] : null;
+  const partnerTz = partner?.timezone || (partner?.country ? getCountryTz(partner.country) : null);
 
-  qs('#greeting-line').textContent = `${getGreeting(myTz)}, ${state.displayName}`;
-  qs('#clock-a-time').textContent = formatClock(tzCO);
-  qs('#clock-b-time').textContent = formatClock(tzES);
-  qs('#clocks-diff').textContent = formatHourDiff(tzCO, tzES);
+  qs('#greeting-line').textContent = `${getGreeting(myTz)}, ${state.displayName || ''}`;
+  qs('#clock-me-flag').textContent = countryFlagEmoji(state.country);
+  qs('#clock-me-time').textContent = formatClock(myTz);
+  qs('#clock-me-place').textContent = getCountryLabel(state.country);
 
-  const talk = talkWindowMessage(tzCO, tzES);
-  const el = qs('#talk-window');
-  el.textContent = talk.good ? `🟢 ${talk.text}` : talk.text;
-  el.dataset.good = String(talk.good);
+  if (partnerTz) {
+    qs('#clock-partner-flag').textContent = countryFlagEmoji(partner.country);
+    qs('#clock-partner-time').textContent = formatClock(partnerTz);
+    qs('#clock-partner-place').textContent = getCountryLabel(partner.country);
+    qs('#clocks-diff').textContent = formatHourDiff(myTz, partnerTz);
+    const talk = talkWindowMessage(myTz, partnerTz);
+    const el = qs('#talk-window');
+    el.textContent = talk.good ? `🟢 ${talk.text}` : talk.text;
+    el.dataset.good = String(talk.good);
+  } else {
+    qs('#clock-partner-flag').textContent = '🏳️';
+    qs('#clock-partner-time').textContent = '--:--';
+    qs('#clock-partner-place').textContent = 'Tu pareja';
+    qs('#clocks-diff').textContent = '—';
+    const el = qs('#talk-window');
+    el.textContent = 'Esperando a que tu pareja se una al espacio';
+    el.dataset.good = 'false';
+  }
 }
 
 // ---------------------------------------------------------
@@ -283,7 +423,7 @@ function renderPresence() {
     const isMe = id === state.deviceId;
     const status = presence?.status;
     const meta = status ? statusMeta(status) : null;
-    const label = meta ? meta.label : guessActivityLabel(member.timezone || COUNTRY_TZ[member.country]);
+    const label = meta ? meta.label : guessActivityLabel(member.timezone || getCountryTz(member.country));
     const emoji = meta ? meta.emoji : '🕓';
     let untilText = '';
     const until = toDateSafe(presence?.until);
@@ -430,6 +570,10 @@ function renderActivity() {
 function renderMeeting() {
   const card = qs('#meeting-card');
   const m = state.meeting;
+  const partnerId = getPartnerDeviceId();
+  const partner = partnerId ? state.members[partnerId] : null;
+  const flagRow = `<span>${countryFlagEmoji(state.country)} ${escapeHtml(getCountryLabel(state.country))}</span><span>→</span><span>${partner ? `${countryFlagEmoji(partner.country)} ${escapeHtml(getCountryLabel(partner.country))}` : '🏳️ Tu pareja'}</span>`;
+
   if (!m || !m.date) { card.hidden = true; renderMeetingSettings(); return; }
   card.hidden = false;
   const days = daysUntil(m.date);
@@ -442,7 +586,7 @@ function renderMeeting() {
     </div>`).join('');
 
   qs('#meeting-body').innerHTML = `
-    <div class="meeting-flag-row"><span>🇨🇴 Colombia</span><span>→</span><span>🇪🇸 España</span></div>
+    <div class="meeting-flag-row">${flagRow}</div>
     <div class="meeting-days">${daysText}</div>
     <div class="meeting-days-label">Próximo encuentro</div>
     <div class="meeting-place">${escapeHtml(m.city || '')}${m.city && m.country ? ', ' : ''}${escapeHtml(m.country || '')}</div>
@@ -638,23 +782,37 @@ function openListModal() {
 // ---------------------------------------------------------
 // MÁS (configuración)
 // ---------------------------------------------------------
+let settingsGender = null;
+
 function wireMore() {
-  qsa('.segmented__opt').forEach((btn) => {
+  qsa('.segmented__opt[data-theme]').forEach((btn) => {
     btn.addEventListener('click', () => {
       setTheme(btn.dataset.theme);
-      qsa('.segmented__opt').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
+      qsa('.segmented__opt[data-theme]').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
+    });
+  });
+
+  qsa('#settings-gender .segmented__opt').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      settingsGender = btn.dataset.gender;
+      qsa('#settings-gender .segmented__opt').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
     });
   });
 
   qs('#btn-save-profile').addEventListener('click', async () => {
+    const btn = qs('#btn-save-profile');
+    btn.disabled = true;
     try {
       await updateProfile(state.coupleId, {
         displayName: qs('#settings-name').value,
+        gender: settingsGender || state.gender || 'unspecified',
         country: qs('#settings-country').value,
       });
       showToast('✓ Guardado');
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
   });
 
@@ -670,11 +828,17 @@ function wireMore() {
     showToast(ok ? '✓ Código copiado' : 'No se pudo copiar', ok ? 'default' : 'error');
   });
 
+  qs('#btn-settings-copy-link').addEventListener('click', async () => {
+    const ok = await copyToClipboard(buildInviteLink(state.coupleId));
+    showToast(ok ? '✓ Enlace de invitación copiado' : 'No se pudo copiar', ok ? 'default' : 'error');
+  });
+
   qs('#btn-edit-meeting').addEventListener('click', () => openMeetingModal());
 
-  qs('#btn-logout').addEventListener('click', () => {
-    if (!confirm('Esto borrará los datos guardados en este dispositivo. ¿Continuar?')) return;
+  qs('#btn-logout').addEventListener('click', async () => {
+    if (!confirm('Vas a cerrar sesión en este dispositivo. ¿Continuar?')) return;
     teardownSubscriptions();
+    try { await signOutUser(); } catch (_) { /* seguimos igualmente */ }
     clearLocalSession();
     location.reload();
   });
@@ -692,7 +856,9 @@ function renderMoreProfile() {
   qs('#settings-name').value = state.displayName;
   qs('#settings-country').value = state.country;
   qs('#settings-code-display').textContent = formatCodeForDisplay(state.coupleId);
-  qsa('.segmented__opt').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.theme === state.theme)));
+  qsa('.segmented__opt[data-theme]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.theme === state.theme)));
+  settingsGender = state.gender || 'unspecified';
+  qsa('#settings-gender .segmented__opt').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.gender === settingsGender)));
 }
 
 function openMeetingModal() {
@@ -761,7 +927,7 @@ function openNoteModal() {
 function openIdeaModal() {
   openModal('tpl-modal-note', (content) => {
     qs('#note-type', content).value = 'story';
-    qs('#modal-content .modal-title').textContent = 'Nueva idea';
+    qs('.modal-title', content).textContent = 'Nueva idea';
     qs('#note-content', content).placeholder = 'Tengo una idea…';
 
     qs('#btn-save-note', content).addEventListener('click', async () => {
@@ -832,7 +998,7 @@ function closeModal() {
 }
 
 // ---------------------------------------------------------
-// Limpieza de listeners (usado al cerrar sesión local)
+// Limpieza de listeners (usado al cerrar sesión)
 // ---------------------------------------------------------
 function teardownSubscriptions() {
   unsubscribeMembers();
@@ -844,4 +1010,5 @@ function teardownSubscriptions() {
   unsubscribeActivity();
   unsubscribeMeeting();
   if (clockInterval) clearInterval(clockInterval);
+  appInitialized = false;
 }
