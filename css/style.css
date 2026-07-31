@@ -93,6 +93,29 @@ a{ color: var(--accent-strong); }
 
 .hidden, [hidden]{ display:none !important; }
 
+.btn-google{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  background: var(--text); color: #1F1F1F;
+  margin-top: 0;
+}
+.btn-google:hover{ opacity: 0.92; }
+.google-g{
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight:700; font-size:14px;
+  width:20px; height:20px; border-radius:50%;
+  background: #fff; color:#4285F4;
+  display:flex; align-items:center; justify-content:center;
+}
+.or-divider{
+  display:flex; align-items:center; gap:10px;
+  margin: 16px 0; color: var(--text-tertiary); font-size:12px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.05em;
+}
+.or-divider::before, .or-divider::after{ content:''; flex:1; height:1px; background: var(--border); }
+.field-error{
+  color: var(--danger); font-size: 12.5px; margin-top: 10px; text-align:center;
+}
+
 /* =========================================================
    Onboarding
    ========================================================= */
