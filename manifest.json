@@ -1,0 +1,17 @@
+{
+  "name": "Sincro",
+  "short_name": "Sincro",
+  "description": "El espacio compartido para dos personas en países diferentes.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0D0E12",
+  "theme_color": "#0D0E12",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230D0E12'/%3E%3Ccircle cx='72' cy='96' r='42' fill='%23E0A45D'/%3E%3Ccircle cx='120' cy='96' r='42' fill='%23F2F1ED' fill-opacity='0.9'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

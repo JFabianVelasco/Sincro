@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sincro</title>
+<meta name="description" content="Sincro — el espacio compartido para dos personas en países diferentes." />
+<meta name="theme-color" content="#0D0E12" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2235%22 cy=%2250%22 r=%2222%22 fill=%22%23E0A45D%22/><circle cx=%2265%22 cy=%2250%22 r=%2222%22 fill=%22%23F2F1ED%22 opacity=%220.85%22/></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/animations.css" />
+<link rel="stylesheet" href="css/responsive.css" />
+</head>
+<body>
+
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ONBOARDING -->
+<div id="view-onboarding" class="view view-onboarding" hidden>
+  <div class="onboarding-shell">
+    <div class="brand-mark">
+      <span class="brand-dot brand-dot--a"></span>
+      <span class="brand-dot brand-dot--b"></span>
+    </div>
+    <h1 class="brand-title">Sincro</h1>
+    <p class="brand-tagline">Un espacio privado para dos, en dos husos horarios.</p>
+
+    <div id="onboarding-step-name" class="onboarding-card">
+      <h2>¿Cómo quieres aparecer?</h2>
+      <label class="field-label" for="input-name">Tu nombre</label>
+      <input id="input-name" class="text-input" type="text" maxlength="24" placeholder="Ej. Jimmy" autocomplete="off" />
+
+      <label class="field-label">¿En qué país estás?</label>
+      <div class="country-pick" role="radiogroup" aria-label="País">
+        <button type="button" class="country-option" data-country="CO" role="radio" aria-checked="false">
+          <span class="flag">🇨🇴</span><span>Colombia</span>
+        </button>
+        <button type="button" class="country-option" data-country="ES" role="radio" aria-checked="false">
+          <span class="flag">🇪🇸</span><span>España</span>
+        </button>
+      </div>
+
+      <button id="btn-continue-name" class="btn btn-primary btn-block" disabled>Continuar</button>
+    </div>
+
+    <div id="onboarding-step-space" class="onboarding-card" hidden>
+      <div class="tab-switch" role="tablist">
+        <button class="tab-switch__opt is-active" data-mode="create" role="tab" aria-selected="true">Crear espacio</button>
+        <button class="tab-switch__opt" data-mode="join" role="tab" aria-selected="false">Unirme a un espacio</button>
+      </div>
+
+      <div id="mode-create" class="mode-panel">
+        <p class="muted-text">Vamos a crear un código privado para tu espacio. Compártelo solo con la otra persona.</p>
+        <button id="btn-create-space" class="btn btn-primary btn-block">Crear mi espacio</button>
+        <div id="create-result" class="create-result" hidden>
+          <span class="field-label">Código de pareja</span>
+          <div class="code-display" id="code-display"></div>
+          <button id="btn-copy-code" class="btn btn-ghost btn-block">Copiar código</button>
+          <button id="btn-enter-space" class="btn btn-primary btn-block">Entrar a Sincro</button>
+        </div>
+      </div>
+
+      <div id="mode-join" class="mode-panel" hidden>
+        <label class="field-label" for="input-code">Código del espacio</label>
+        <input id="input-code" class="text-input text-input--code" type="text" maxlength="9" placeholder="X7K-29P" autocomplete="off" />
+        <button id="btn-join-space" class="btn btn-primary btn-block">Unirme</button>
+      </div>
+
+      <button id="btn-back-name" class="btn btn-text">Volver</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="view-app" class="app-shell" hidden>
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="brand-dot brand-dot--a brand-dot--sm"></span>
+      <span class="brand-dot brand-dot--b brand-dot--sm"></span>
+      <span class="topbar__title">Sincro</span>
+    </div>
+    <div class="topbar__status">
+      <span id="connection-badge" class="connection-badge" data-state="connecting">
+        <span class="connection-dot"></span>
+        <span id="connection-label">Conectando…</span>
+      </span>
+    </div>
+  </header>
+
+  <nav class="sidenav" aria-label="Navegación principal">
+    <button class="sidenav__item is-active" data-route="home" aria-label="Inicio">
+      <span class="sidenav__icon">⌂</span><span class="sidenav__label">Inicio</span>
+    </button>
+    <button class="sidenav__item" data-route="plans" aria-label="Planes">
+      <span class="sidenav__icon">◇</span><span class="sidenav__label">Planes</span>
+    </button>
+    <button class="sidenav__item" data-route="lists" aria-label="Listas">
+      <span class="sidenav__icon">☰</span><span class="sidenav__label">Listas</span>
+    </button>
+    <button class="sidenav__item" data-route="more" aria-label="Más">
+      <span class="sidenav__icon">•••</span><span class="sidenav__label">Más</span>
+    </button>
+  </nav>
+
+  <main id="main-content" class="main-content" tabindex="-1">
+    <!-- HOME -->
+    <section id="route-home" class="route" data-route-panel="home">
+      <div class="page-head">
+        <p id="greeting-line" class="greeting-line">Hola</p>
+      </div>
+
+      <div id="clocks-card" class="card clocks-card">
+        <div class="clocks-row">
+          <div class="clock-block" id="clock-a">
+            <span class="clock-flag">🇨🇴</span>
+            <span class="clock-time" id="clock-a-time">--:--</span>
+            <span class="clock-place">Colombia</span>
+          </div>
+          <div class="clocks-divider">
+            <span class="clocks-divider__line"></span>
+            <span class="clocks-divider__diff" id="clocks-diff">—</span>
+            <span class="clocks-divider__line"></span>
+          </div>
+          <div class="clock-block" id="clock-b">
+            <span class="clock-flag">🇪🇸</span>
+            <span class="clock-time" id="clock-b-time">--:--</span>
+            <span class="clock-place">España</span>
+          </div>
+        </div>
+        <p class="talk-window" id="talk-window">—</p>
+      </div>
+
+      <div class="card presence-card">
+        <h3 class="card-title">Presencia</h3>
+        <div id="presence-list" class="presence-list">
+          <div class="skeleton skeleton--row"></div>
+          <div class="skeleton skeleton--row"></div>
+        </div>
+        <button id="btn-im-here" class="btn btn-secondary btn-block">Estoy aquí</button>
+        <p id="both-here-banner" class="both-here-banner" hidden>Ambos están aquí</p>
+      </div>
+
+      <div class="card notes-preview-card" id="notes-preview-card">
+        <div class="card-title-row">
+          <h3 class="card-title">Para ti</h3>
+          <span id="notes-unread-badge" class="badge" hidden>0</span>
+        </div>
+        <div id="notes-preview-body" class="notes-preview-body">
+          <p class="empty-hint">Nada nuevo por aquí todavía.</p>
+        </div>
+      </div>
+
+      <div class="card next-plan-card" id="next-plan-card" hidden>
+        <h3 class="card-title">Próximo</h3>
+        <div id="next-plan-body"></div>
+      </div>
+
+      <div class="card meeting-card" id="meeting-card" hidden>
+        <h3 class="card-title">Próximo encuentro</h3>
+        <div id="meeting-body"></div>
+      </div>
+
+      <div class="quick-actions">
+        <button class="quick-action" data-action="open-note">
+          <span class="quick-action__icon">＋</span>Dejar algo
+        </button>
+        <button class="quick-action" data-action="open-plan">
+          <span class="quick-action__icon">＋</span>Crear plan
+        </button>
+        <button class="quick-action" data-action="open-checkin">
+          <span class="quick-action__icon">＋</span>Nuevo check-in
+        </button>
+        <button class="quick-action" data-action="open-idea">
+          <span class="quick-action__icon">＋</span>Nueva idea
+        </button>
+      </div>
+
+      <div class="card activity-card">
+        <h3 class="card-title">Actividad</h3>
+        <div id="activity-list" class="activity-list">
+          <p class="empty-hint">Todavía no hay actividad.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLANS -->
+    <section id="route-plans" class="route" data-route-panel="plans" hidden>
+      <div class="page-head">
+        <h1 class="page-title">Planes</h1>
+        <button class="btn btn-primary btn-sm" id="btn-new-plan">＋ Nuevo</button>
+      </div>
+      <div id="plans-list" class="plans-list">
+        <div class="skeleton skeleton--card"></div>
+      </div>
+    </section>
+
+    <!-- LISTS -->
+    <section id="route-lists" class="route" data-route-panel="lists" hidden>
+      <div class="page-head">
+        <h1 class="page-title">Listas</h1>
+        <button class="btn btn-primary btn-sm" id="btn-new-list">＋ Nueva</button>
+      </div>
+      <div id="lists-grid" class="lists-grid">
+        <div class="skeleton skeleton--card"></div>
+      </div>
+    </section>
+
+    <!-- LIST DETAIL -->
+    <section id="route-list-detail" class="route" data-route-panel="list-detail" hidden>
+      <div class="page-head">
+        <button class="btn btn-text" id="btn-back-lists">← Listas</button>
+      </div>
+      <h1 class="page-title" id="list-detail-title">Lista</h1>
+      <form id="form-list-item" class="inline-add-form">
+        <input id="input-list-item" class="text-input" type="text" maxlength="120" placeholder="Añadir elemento…" />
+        <button type="submit" class="btn btn-primary">Añadir</button>
+      </form>
+      <div id="list-detail-items" class="list-items"></div>
+    </section>
+
+    <!-- MORE -->
+    <section id="route-more" class="route" data-route-panel="more" hidden>
+      <div class="page-head"><h1 class="page-title">Más</h1></div>
+
+      <div class="card">
+        <h3 class="card-title">Mi perfil</h3>
+        <label class="field-label" for="settings-name">Nombre</label>
+        <input id="settings-name" class="text-input" type="text" maxlength="24" />
+        <label class="field-label" for="settings-country">País</label>
+        <select id="settings-country" class="select-input">
+          <option value="CO">🇨🇴 Colombia</option>
+          <option value="ES">🇪🇸 España</option>
+        </select>
+        <button id="btn-save-profile" class="btn btn-secondary btn-block">Guardar cambios</button>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Tema</h3>
+        <div class="segmented" role="radiogroup" aria-label="Tema">
+          <button class="segmented__opt" data-theme="light" role="radio" aria-checked="false">Claro</button>
+          <button class="segmented__opt" data-theme="dark" role="radio" aria-checked="false">Oscuro</button>
+          <button class="segmented__opt" data-theme="system" role="radio" aria-checked="false">Sistema</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Notificaciones</h3>
+        <p class="muted-text" id="notif-status-text">Comprueba el estado de las notificaciones del navegador.</p>
+        <button id="btn-enable-notifs" class="btn btn-secondary btn-block">Activar notificaciones</button>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Código del espacio</h3>
+        <p class="muted-text">Compártelo solo con tu pareja. Cualquiera con este código puede entrar.</p>
+        <div class="code-display code-display--sm" id="settings-code-display"></div>
+        <button id="btn-settings-copy-code" class="btn btn-ghost btn-block">Copiar código</button>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Próximo encuentro</h3>
+        <div id="meeting-settings-body"></div>
+        <button id="btn-edit-meeting" class="btn btn-secondary btn-block">Editar próximo encuentro</button>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Información</h3>
+        <p class="muted-text">Sincro guarda tus datos en Firestore sin un sistema de autenticación. El código de tu espacio funciona como contraseña: no lo compartas fuera de tu pareja.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Cerrar sesión local</h3>
+        <p class="muted-text">Esto borra los datos guardados en este dispositivo. Necesitarás el código para volver a entrar.</p>
+        <button id="btn-logout" class="btn btn-danger btn-block">Cerrar sesión local</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottomnav" aria-label="Navegación principal">
+    <button class="bottomnav__item is-active" data-route="home">
+      <span class="bottomnav__icon">⌂</span><span>Inicio</span>
+    </button>
+    <button class="bottomnav__item" data-route="plans">
+      <span class="bottomnav__icon">◇</span><span>Planes</span>
+    </button>
+    <button class="bottomnav__item" data-route="lists">
+      <span class="bottomnav__icon">☰</span><span>Listas</span>
+    </button>
+    <button class="bottomnav__item" data-route="more">
+      <span class="bottomnav__icon">•••</span><span>Más</span>
+    </button>
+  </nav>
+</div>
+
+<!-- MODAL ROOT -->
+<div id="modal-root" class="modal-root" hidden>
+  <div id="modal-backdrop" class="modal-backdrop"></div>
+  <div id="modal-sheet" class="modal-sheet" role="dialog" aria-modal="true">
+    <div class="modal-sheet__handle"></div>
+    <div id="modal-content" class="modal-content"></div>
+  </div>
+</div>
+
+<template id="tpl-modal-note">
+  <h2 class="modal-title">Dejar algo para ti</h2>
+  <label class="field-label" for="note-type">Tipo</label>
+  <select id="note-type" class="select-input">
+    <option value="note">Nota</option>
+    <option value="reminder">Recordatorio</option>
+    <option value="story">Algo que quiero contar</option>
+    <option value="message">Mensaje corto</option>
+    <option value="link">Enlace</option>
+  </select>
+  <label class="field-label" for="note-content">Contenido</label>
+  <textarea id="note-content" class="textarea-input" maxlength="500" rows="4" placeholder="Escribe aquí…"></textarea>
+  <div id="note-link-wrap" hidden>
+    <label class="field-label" for="note-link">Enlace</label>
+    <input id="note-link" class="text-input" type="url" placeholder="https://" />
+  </div>
+  <button id="btn-save-note" class="btn btn-primary btn-block">Enviar</button>
+</template>
+
+<template id="tpl-modal-plan">
+  <h2 class="modal-title" id="plan-modal-title">Nuevo plan</h2>
+  <label class="field-label" for="plan-title">Título</label>
+  <input id="plan-title" class="text-input" type="text" maxlength="60" placeholder="Ej. Ver película" />
+  <label class="field-label" for="plan-type">Tipo</label>
+  <select id="plan-type" class="select-input">
+    <option value="call">📞 Llamada</option>
+    <option value="movie">🎬 Película</option>
+    <option value="show">📺 Serie</option>
+    <option value="game">🎮 Juego</option>
+    <option value="food">🍽️ Comida</option>
+    <option value="work">🧑‍💻 Trabajo/estudio</option>
+    <option value="trip">✈️ Viaje</option>
+    <option value="other">✨ Otro</option>
+  </select>
+  <label class="field-label" for="plan-desc">Descripción (opcional)</label>
+  <textarea id="plan-desc" class="textarea-input" maxlength="240" rows="2"></textarea>
+  <div class="field-row">
+    <div>
+      <label class="field-label" for="plan-date">Fecha</label>
+      <input id="plan-date" class="text-input" type="date" />
+    </div>
+    <div>
+      <label class="field-label" for="plan-time">Hora (tu hora local)</label>
+      <input id="plan-time" class="text-input" type="time" />
+    </div>
+  </div>
+  <label class="field-label" for="plan-reminder">Recordatorio</label>
+  <select id="plan-reminder" class="select-input">
+    <option value="">Sin recordatorio</option>
+    <option value="5">5 minutos antes</option>
+    <option value="15">15 minutos antes</option>
+    <option value="30">30 minutos antes</option>
+    <option value="60">1 hora antes</option>
+    <option value="1440">1 día antes</option>
+  </select>
+  <button id="btn-save-plan" class="btn btn-primary btn-block">Guardar plan</button>
+</template>
+
+<template id="tpl-modal-status">
+  <h2 class="modal-title">¿Qué estás haciendo?</h2>
+  <div id="status-options" class="status-grid"></div>
+  <label class="field-label" for="status-until">Disponible hasta (opcional)</label>
+  <input id="status-until" class="text-input" type="time" />
+  <button id="btn-save-status" class="btn btn-primary btn-block">Actualizar estado</button>
+</template>
+
+<template id="tpl-modal-list">
+  <h2 class="modal-title">Nueva lista</h2>
+  <label class="field-label" for="list-name">Nombre</label>
+  <input id="list-name" class="text-input" type="text" maxlength="40" placeholder="Ej. Restaurantes para probar" />
+  <label class="field-label" for="list-category">Categoría</label>
+  <select id="list-category" class="select-input">
+    <option value="watch">🎬 Ver</option>
+    <option value="try">🍜 Probar</option>
+    <option value="places">🌎 Lugares</option>
+    <option value="play">🎮 Jugar</option>
+    <option value="ideas">💡 Ideas</option>
+    <option value="together">✈️ Cuando estemos juntos</option>
+  </select>
+  <button id="btn-save-list" class="btn btn-primary btn-block">Crear lista</button>
+</template>
+
+<template id="tpl-modal-checkin">
+  <h2 class="modal-title">¿Cómo estás?</h2>
+  <div id="mood-options" class="status-grid"></div>
+  <label class="field-label" for="checkin-note">Nota (opcional)</label>
+  <textarea id="checkin-note" class="textarea-input" maxlength="200" rows="3"></textarea>
+  <button id="btn-save-checkin" class="btn btn-primary btn-block">Compartir check-in</button>
+</template>
+
+<template id="tpl-modal-meeting">
+  <h2 class="modal-title">Próximo encuentro</h2>
+  <label class="field-label" for="meeting-date">Fecha</label>
+  <input id="meeting-date" class="text-input" type="date" />
+  <div class="field-row">
+    <div>
+      <label class="field-label" for="meeting-city">Ciudad</label>
+      <input id="meeting-city" class="text-input" type="text" maxlength="40" />
+    </div>
+    <div>
+      <label class="field-label" for="meeting-country">País</label>
+      <input id="meeting-country" class="text-input" type="text" maxlength="40" />
+    </div>
+  </div>
+  <label class="field-label" for="meeting-desc">Descripción (opcional)</label>
+  <textarea id="meeting-desc" class="textarea-input" maxlength="200" rows="2"></textarea>
+  <button id="btn-save-meeting" class="btn btn-primary btn-block">Guardar</button>
+</template>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

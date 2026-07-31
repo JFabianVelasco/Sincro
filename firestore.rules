@@ -1,0 +1,131 @@
+rules_version = '2';
+
+// =========================================================
+// SINCRO — firestore.rules
+//
+// IMPORTANTE — LEE ESTO ANTES DE USAR EN PRODUCCIÓN:
+//
+// Sincro NO utiliza Firebase Authentication. Esto es una
+// decisión deliberada del proyecto (frontend 100% estático,
+// sin backend propio), pero tiene una consecuencia real:
+// Firestore no tiene ninguna forma criptográfica de saber
+// "quién" está haciendo una petición. Cualquier regla que
+// escribamos aquí solo puede razonar sobre LA FORMA de los
+// datos (¿tiene los campos correctos?, ¿los tipos son
+// correctos?, ¿respeta los límites de tamaño?), nunca sobre
+// la identidad real de quien llama.
+//
+// En la práctica esto significa que estas reglas son un
+// filtro de "buenos modales" contra errores de la propia app
+// y contra escrituras claramente inválidas o masivas —
+// NO son equivalentes a la seguridad que ofrecería
+// Firebase Authentication + reglas basadas en request.auth.
+// Cualquiera que conozca (o adivine) el "coupleId" de 6
+// caracteres puede leer y escribir en ese espacio.
+//
+// Mitigaciones aplicadas en el diseño:
+//  - El coupleId se genera con un alfabeto de 32 símbolos y
+//    6 posiciones (~1 billón de combinaciones), y nunca se
+//    expone públicamente ni se indexa: solo vive en la URL
+//    que las dos personas se pasan directamente.
+//  - Se genera además un "secret" local largo (48 hex) que
+//    se guarda únicamente en localStorage del creador, como
+//    capa adicional para futuras verificaciones si se añade
+//    una función que lo requiera (hoy no se usa para las
+//    reglas porque Firestore no puede verificarlo sin auth).
+//  - Las reglas de abajo limitan tamaños de texto y tipos de
+//    campo para reducir el riesgo de escrituras basura o
+//    ataques de espacio (denial-of-wallet).
+//
+// Si en el futuro quieres seguridad real por usuario,
+// la única vía correcta es añadir Firebase Authentication
+// (por ejemplo, Anonymous Auth + un custom claim por couple)
+// y reescribir estas reglas usando request.auth.uid.
+// =========================================================
+
+function isString(v) { return v is string; }
+function shortStr(v, n) { return v is string && v.size() <= n; }
+
+match /databases/{database}/documents {
+
+  match /couples/{coupleId} {
+
+    // El propio documento de la pareja: solo lectura/creación
+    // básica de campos esperados.
+    allow get: if true;
+    allow list: if false; // nunca listar todas las parejas
+    allow create: if request.resource.data.keys().hasOnly(['createdAt', 'secretHint'])
+                  && shortStr(request.resource.data.secretHint, 32);
+    allow update: if false; // el doc raíz no se actualiza tras crearse
+    allow delete: if false;
+
+    match /members/{deviceId} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasAll(['displayName', 'country', 'timezone'])
+                   && shortStr(request.resource.data.displayName, 24)
+                   && request.resource.data.country in ['CO', 'ES']
+                   && shortStr(request.resource.data.timezone, 40);
+    }
+
+    match /presence/{deviceId} {
+      allow read: if true;
+      allow write: if request.resource.data.size() <= 6;
+    }
+
+    match /notes/{noteId} {
+      allow read: if true;
+      allow create: if shortStr(request.resource.data.content, 500)
+                    && request.resource.data.author is string;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['read', 'readAt']);
+      allow delete: if true; // la app solo expone el botón de borrar para notas propias
+    }
+
+    match /plans/{planId} {
+      allow read: if true;
+      allow create: if shortStr(request.resource.data.title, 60)
+                    && request.resource.data.when is timestamp;
+      allow update, delete: if true;
+    }
+
+    match /lists/{listId} {
+      allow read: if true;
+      allow create: if shortStr(request.resource.data.name, 40);
+      allow update, delete: if true;
+
+      match /items/{itemId} {
+        allow read: if true;
+        allow create: if shortStr(request.resource.data.text, 120);
+        allow update, delete: if true;
+      }
+    }
+
+    match /checkins/{checkinId} {
+      allow read: if true;
+      allow create: if shortStr(request.resource.data.note, 200);
+      allow update, delete: if false; // los check-ins son un registro, no se editan
+    }
+
+    match /activity/{activityId} {
+      allow read: if true;
+      allow create: if shortStr(request.resource.data.summary, 240);
+      allow update, delete: if false;
+    }
+
+    match /meeting/{docId} {
+      allow read: if true;
+      allow write: if true;
+
+      match /todos/{todoId} {
+        allow read: if true;
+        allow create: if shortStr(request.resource.data.text, 100);
+        allow update, delete: if true;
+      }
+    }
+  }
+
+  // Cualquier otra ruta no contemplada queda cerrada por defecto.
+  match /{document=**} {
+    allow read, write: if false;
+  }
+}
