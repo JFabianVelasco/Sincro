@@ -1,0 +1,75 @@
+/* =========================================================
+   SINCRO — Responsive
+   Mobile-first. Navegación inferior en móvil, lateral en desktop.
+   ========================================================= */
+
+/* Pantallas muy pequeñas (360–374px) */
+@media (max-width: 374px){
+  .clock-time{ font-size: 25px; }
+  .clocks-divider{ width: 72px; }
+  .quick-actions{ gap: 8px; }
+  .code-display{ font-size: 22px; }
+}
+
+/* Tablet vertical y superior */
+@media (min-width: 768px){
+  :root{ --nav-height: 0px; }
+
+  .main-content{
+    max-width: 640px;
+    padding: 32px 24px 48px;
+  }
+
+  .bottomnav{ display:none; }
+
+  .sidenav{
+    display:flex;
+    flex-direction:column;
+    gap: 4px;
+    position: fixed;
+    top: var(--topbar-height);
+    left:0;
+    bottom:0;
+    width: 220px;
+    padding: 18px 12px;
+    border-right: 1px solid var(--border-soft);
+    background: var(--bg-elevated);
+  }
+  .sidenav__item{
+    display:flex; align-items:center; gap:10px;
+    border:none; background:transparent; color: var(--text-secondary);
+    padding: 11px 14px; border-radius: var(--radius-sm);
+    font-size: 14px; font-weight:700; cursor:pointer; text-align:left;
+    transition: background var(--dur-micro) var(--ease), color var(--dur-micro) var(--ease);
+  }
+  .sidenav__item:hover{ background: var(--surface); color: var(--text); }
+  .sidenav__item.is-active{ background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent-strong); }
+  .sidenav__icon{ width: 18px; text-align:center; }
+
+  .app-shell{ padding-left: 220px; }
+
+  .quick-actions{ grid-template-columns: repeat(4, 1fr); }
+  .lists-grid{ grid-template-columns: repeat(3, 1fr); }
+
+  .modal-sheet{
+    position: static;
+    margin: 8vh auto;
+    max-width: 460px;
+    border-radius: var(--radius-lg);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .modal-root{ display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; }
+  .modal-sheet__handle{ display:none; }
+}
+
+/* Desktop grande */
+@media (min-width: 1024px){
+  .main-content{ max-width: 760px; }
+  .lists-grid{ grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 1440px){
+  .main-content{ max-width: 860px; padding-top: 40px; }
+  .sidenav{ width: 250px; }
+  .app-shell{ padding-left: 250px; }
+}

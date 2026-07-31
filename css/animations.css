@@ -1,0 +1,60 @@
+/* =========================================================
+   SINCRO — Animaciones
+   Rápidas y discretas. Nada por encima de ~250ms.
+   ========================================================= */
+
+@keyframes enterFade{
+  from{ opacity:0; }
+  to{ opacity:1; }
+}
+
+@keyframes enterUp{
+  from{ opacity:0; transform: translateY(6px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+@keyframes fadeIn{
+  from{ opacity:0; }
+  to{ opacity:1; }
+}
+
+@keyframes sheetUp{
+  from{ opacity:0; transform: translateY(16px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+@keyframes toastIn{
+  from{ opacity:0; transform: translateY(8px) scale(0.98); }
+  to{ opacity:1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut{
+  from{ opacity:1; transform: translateY(0) scale(1); }
+  to{ opacity:0; transform: translateY(6px) scale(0.98); }
+}
+
+@keyframes pulseDot{
+  0%, 100%{ opacity: 1; }
+  50%{ opacity: 0.35; }
+}
+
+@keyframes shimmer{
+  0%{ background-position: 100% 0; }
+  100%{ background-position: 0 0; }
+}
+
+@keyframes popIn{
+  from{ transform: scale(0.9); opacity:0; }
+  to{ transform: scale(1); opacity:1; }
+}
+
+.anim-pop{ animation: popIn var(--dur-micro) var(--ease); }
+
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
